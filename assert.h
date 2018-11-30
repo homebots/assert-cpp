@@ -1,20 +1,17 @@
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
+#include <iostream>
 
 #define lprintf(...) do { leftPadding(); printf(__VA_ARGS__); } while (0);
+
 using namespace std;
 
 const char* OK = "✔";
 const char* FAIL = "×";
 const char* LEFTPAD = "  ";
-const char* EXPECTED_NUMBER = "Expected %s to be %s\n";
-const char* EXPECTED_STRING = "Expected string ";
-const char* TO_BE_STRING = " to be ";
 
 typedef void (*Spec)();
 
-int total = 0;
 int failed = 0;
 int successful = 0;
 int skipped = 0;
@@ -42,22 +39,30 @@ void printResult(const char* description) {
 }
 
 template<typename T>
-void compare(T actual, T expected) {
-  if (hasErrors) {
-    return;
+bool compare(T actual, T expected) {
+  return actual == expected;
+}
+
+bool compare(unsigned char* actual, const char* expected) {
+  return 0 == strcmp((const char*) actual, expected);
+}
+
+void runSpec(Spec spec) {
+  try {
+    spec();
   }
-
-  bool valid = actual == expected;
-  hasErrors = !valid;
-
-  if (hasErrors) {
-    throw actual;
+  catch (...) {
+    hasErrors = true;
   }
 }
 
-void assert(bool actual) {
-  compare(actual, true);
+void skip(const char* description) {
+  paddingLevel++;
+  lprintf("- %s\n", description);
+  paddingLevel--;
 }
+
+/////////
 
 void describe(const char* description, Spec spec) {
   paddingLevel++;
@@ -66,26 +71,9 @@ void describe(const char* description, Spec spec) {
   paddingLevel--;
 }
 
-void runSpec(Spec spec) {
-  try {
-    spec();
-  }
-  catch (char* e) {
-    lprintf("> Expected %s\n", e);
-  }
-  catch (int e) {
-    lprintf("> Expected %d\n", e);
-  }
-  catch (...) {
-    lprintf("> Error!\n");
-    hasErrors = true;
-  }
-}
-
 void it(const char* description, Spec spec) {
   hasErrors = false;
   paddingLevel++;
-  total++;
 
   runSpec(spec);
   printResult(description);
@@ -99,25 +87,21 @@ void it(const char* description, Spec spec) {
   paddingLevel--;
 }
 
-void skip(const char* description) {
-  paddingLevel++;
-  lprintf("- %s\n", description);
-  paddingLevel--;
-}
-
 void xdescribe(const char* description) { skip(description); }
 void xdescribe(const char* description, Spec spec) { skipped++; skip(description); }
-void xit(const char* description) { skip(description); }
+void xit(const char* description) { skipped++; skip(description); }
 void xit(const char* description, Spec spec) { skipped++; skip(description); }
 
 void testSummary() {
-  printf("\n\nTotal: %d\n", total);
-  printf("Successful: %d\n", successful);
+  printf("\n\nSuccessful: %d\n", successful);
   printf("Failed: %d\n", failed);
   printf("Skipped: %d\n", skipped);
+  printf("\nTotal: %d\n", skipped + failed + successful);
   printf("\nDone.\n\n");
 
-  exit(failed);
+  if (failed > 0) {
+    exit(1);
+  }
 }
 
 template<typename T>
@@ -125,25 +109,29 @@ class Expectation {
   public:
     T actual;
 
-  Expectation(T _actual):
-    actual(_actual) {}
+    Expectation(T _actual):
+      actual(_actual) {}
 
-  void toBe(T expected) {
-    compare(actual, expected);
-  }
+    void toBe(T expected) {
+      _toBe(!compare(actual, expected), expected);
+    }
 
-  void toBeTrue() {
-    assert(actual);
-  }
+    void toBe(const char* expected) {
+      _toBe(!compare(actual, expected), (unsigned char*) expected);
+    }
 
-  void toBeFalse() {
-    compare(actual, false);
-  }
+  private:
+    void _toBe(bool value, T expected) {
+      hasErrors = value;
 
-  void toEqualString(const char* expected) {
-    bool valid = strcmp((const char*) actual, expected);
-    assert(valid == 0);
-  }
+      if (hasErrors) {
+        cout << "\n";
+        leftPadding();
+        cout << "  Expected " << expected << " but got " << actual << "\n";
+
+        throw "error";
+      }
+    }
 };
 
 template<typename T>
